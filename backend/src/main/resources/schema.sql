@@ -2,6 +2,7 @@
 SET NAMES utf8mb4;
 
 DROP TABLE IF EXISTS wash_order;
+DROP TABLE IF EXISTS rework_order;
 DROP TABLE IF EXISTS supply;
 DROP TABLE IF EXISTS member_card;
 DROP TABLE IF EXISTS bay;
@@ -28,6 +29,19 @@ CREATE TABLE wash_order (
   PRIMARY KEY (id),
   UNIQUE KEY uk_order_no (order_no),
   KEY idx_order_bay (bay_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE rework_order (
+  id           BIGINT       NOT NULL AUTO_INCREMENT,
+  rework_no    VARCHAR(32)  NOT NULL,
+  order_id     BIGINT       NOT NULL,
+  bay_id       BIGINT       NOT NULL,
+  reason       VARCHAR(120) NULL,
+  rework_state VARCHAR(12)  NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_rework_no (rework_no),
+  KEY idx_rework_order (order_id),
+  KEY idx_rework_bay (bay_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE supply (
@@ -57,7 +71,7 @@ CREATE TABLE member_card (
 INSERT INTO bay (bay_code, bay_name, seat_count, bay_state) VALUES
 ('B-01', '标准洗车位 1', 1, '占用'),
 ('B-02', '标准洗车位 2', 1, '空闲'),
-('B-03', '精洗位 A', 1, '空闲'),
+('B-03', '精洗位 A', 2, '空闲'),
 ('B-04', '内饰清洁位', 1, '停用');
 
 INSERT INTO wash_order (order_no, plate_no, bay_id, service_type, price, order_date, wash_state) VALUES
@@ -66,6 +80,12 @@ INSERT INTO wash_order (order_no, plate_no, bay_id, service_type, price, order_d
 ('WO-03', '京Q66666', 3, '内饰清洁', 180, '2026-09-19', '待洗'),
 ('WO-04', '京B23456', 1, '标准洗车', 30, '2026-09-18', '已完成'),
 ('WO-05', '京C34567', 2, '标准洗车', 30, '2026-09-18', '已完成');
+
+-- WO-04 有一张已验收的历史回炉（不妨碍再挂）；WO-05 挂着一张回炉中的，原单标「回炉未结」。
+-- WO-05 原工位 B-02 上有 WO-02 没洗完，所以这张回炉改派到了 B-03。
+INSERT INTO rework_order (rework_no, order_id, bay_id, reason, rework_state) VALUES
+('RW-WO-04-1', 4, 1, '客人说门边还有水渍', '已验收'),
+('RW-WO-05-1', 5, 3, '轮毂上还有刹车粉', '回炉中');
 
 INSERT INTO supply (supply_code, supply_name, unit_text, stock, warn_line, supply_state) VALUES
 ('SP-01', '洗车液', '桶', 18, 5, '正常'),

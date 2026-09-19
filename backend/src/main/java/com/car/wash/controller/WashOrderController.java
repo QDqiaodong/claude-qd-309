@@ -31,6 +31,11 @@ public class WashOrderController {
         return service.list(state == null || state.isBlank() ? null : WashState.valueOf(state), keyword);
     }
 
+    @GetMapping("/{id}")
+    public WashOrder get(@PathVariable Long id) {
+        return service.get(id);
+    }
+
     @PostMapping
     public WashOrder create(@RequestBody WashOrder form) {
         return service.save(form);

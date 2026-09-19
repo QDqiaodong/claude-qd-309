@@ -14,9 +14,17 @@ export const bayApi = {
 }
 export const orderApi = {
   list: (params) => http.get('/orders', { params }),
+  get: (id) => http.get(`/orders/${id}`),
   add: (b) => http.post('/orders', b),
   save: (id, b) => http.put(`/orders/${id}`, b),
   pay: (cardId, amount) => http.post(`/orders/pay/${cardId}`, { amount })
+}
+export const reworkApi = {
+  list: (params) => http.get('/reworks', { params }),
+  get: (id) => http.get(`/reworks/${id}`),
+  add: (b) => http.post('/reworks', b),
+  save: (id, b) => http.put(`/reworks/${id}`, b),
+  reassign: (id, bayId) => http.post(`/reworks/${id}/reassign`, { bayId })
 }
 export const supplyApi = {
   list: (params) => http.get('/supplies', { params }),

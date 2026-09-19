@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import java.time.LocalDate;
 
 /** 洗车单。 */
@@ -41,4 +42,12 @@ public class WashOrder {
     @Enumerated(EnumType.STRING)
     @Column(name = "wash_state", nullable = false, length = 12)
     public WashState washState;
+
+    // 以下只是带出给页面看的，不落库：挂着未验收回炉时，列表和详情都要看得出「回炉未结」。
+    @Transient
+    public Boolean reworkOpen;
+
+    /** 未验收那张回炉单当前的状态（待回炉/回炉中），没有未结回炉就是空。 */
+    @Transient
+    public String reworkState;
 }
