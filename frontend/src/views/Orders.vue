@@ -1,6 +1,6 @@
 <template>
   <div class="pane">
-    <header class="hd"><h2>洗车单</h2><span class="sub">按状态分页签；「推进」把单子往前推一步，结账可以从会员卡扣</span>
+    <header class="hd"><h2>洗车单</h2><span class="sub">按状态分页签；「推进」把单子往前推一步，已完成单可以挂回炉</span>
       <button class="prime" @click="openNew">开单</button></header>
     <div class="tabs">
       <div class="tab" :class="{ on: tab === 'all' }" @click="tab = 'all'">全部 {{ items.length }}</div>
@@ -10,7 +10,7 @@
     </div>
     <div class="table">
       <div class="row head"><span>单号</span><span>车牌</span><span>工位</span><span>服务</span>
-        <span class="r">金额</span><span>日期</span><span>状态</span><span>操作</span></div>
+        <span class="r">金额</span><span>日期</span><span>状态</span><span class="r">操作</span></div>
       <div v-for="o in shown" :key="o.id" class="row">
         <span class="mono">{{ o.orderNo }}</span>
         <span>{{ o.plateNo }}</span>
@@ -18,24 +18,57 @@
         <span>{{ o.serviceType || '—' }}</span>
         <span class="r">¥{{ o.price ?? 0 }}</span>
         <span class="dim">{{ o.orderDate }}</span>
-        <span class="st">{{ o.washState }}</span>
         <span>
+          <span class="st">{{ o.washState }}</span>
+          <el-tag v-if="o.reworkOpen" size="small" type="warning" effect="dark" class="rw">回炉未结</el-tag>
+        </span>
+        <span class="r">
           <button v-if="nextOf(o)" class="ghost" @click="advance(o)">推进</button>
           <button v-if="o.washState === '已完成'" class="ghost" @click="payWithCard(o)">卡结账</button>
+          <button v-if="o.washState === '已完成'" class="ghost rw-btn"
+                  :disabled="!!o.reworkOpen" :title="o.reworkOpen ? '还有未验收的回炉，不能再挂' : '挂到回炉台'"
+                  @click="goHang(o)">{{ o.reworkOpen ? '回炉中' : '挂回炉' }}</button>
+          <button class="ghost" @click="openDetail(o)">详情</button>
         </span>
       </div>
     </div>
+
     <el-dialog v-model="dialog" title="开一张洗车单" width="440px">
       <div class="fr"><label>单号</label><el-input v-model="form.orderNo" /></div>
       <div class="fr"><label>车牌</label><el-input v-model="form.plateNo" /></div>
       <div class="fr"><label>工位</label>
-        <el-select v-model="form.bayId" style="flex:1">
-          <el-option v-for="b in usableBays" :key="b.id" :label="b.bayName" :value="b.id" />
+        <el-select v-model="form.bayId" style="flex:1" placeholder="停用或满位的工位排不进去">
+          <el-option v-for="b in usableBays" :key="b.id"
+                     :label="b.bayCode + ' ' + b.bayName + '（空 ' + freeSeats(b) + '/' + seatCount(b) + '）'"
+                     :value="b.id" />
         </el-select></div>
       <div class="fr"><label>服务</label><el-input v-model="form.serviceType" /></div>
       <div class="fr"><label>金额</label><el-input v-model="form.price" /></div>
       <template #footer><el-button @click="dialog = false">取消</el-button>
         <el-button type="primary" @click="submit">保存</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="detailDlg" title="洗车单详情" width="460px">
+      <div v-if="detail" class="detail">
+        <div class="d-row"><span>单号</span><b class="mono">{{ detail.orderNo }}</b></div>
+        <div class="d-row"><span>车牌</span><b>{{ detail.plateNo }}</b></div>
+        <div class="d-row"><span>工位</span><b>{{ bayName(detail.bayId) }}</b></div>
+        <div class="d-row"><span>服务</span><b>{{ detail.serviceType || '—' }}</b></div>
+        <div class="d-row"><span>金额</span><b>¥{{ detail.price ?? 0 }}</b></div>
+        <div class="d-row"><span>日期</span><b>{{ detail.orderDate }}</b></div>
+        <div class="d-row"><span>状态</span>
+          <b><span class="st">{{ detail.washState }}</span>
+            <el-tag v-if="detail.reworkOpen" size="small" type="warning" effect="dark" class="rw">回炉未结</el-tag>
+          </b>
+        </div>
+        <div class="d-row" v-if="detail.reworkOpen"><span>未结回炉</span>
+          <b class="mono">{{ detail.openReworkNo }}（验收前原单不能退回待洗/清洗中，也不能再挂回炉）</b></div>
+      </div>
+      <template #footer>
+        <el-button @click="detailDlg = false">关上</el-button>
+        <el-button v-if="detail && detail.washState === '已完成' && !detail.reworkOpen"
+                   type="primary" @click="detailDlg = false; goHang(detail)">挂回炉</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -46,14 +79,16 @@ import { bayApi, cardApi, orderApi } from '../api'
 export default {
   name: 'Orders',
   data() {
-    return { items: [], bays: [], cards: [], tab: 'all', dialog: false, form: {}, STATES: ['待洗', '清洗中', '已完成'] }
+    return { items: [], bays: [], cards: [], tab: 'all', dialog: false, form: {},
+      detailDlg: false, detail: null, STATES: ['待洗', '清洗中', '已完成'] }
   },
   computed: {
     shown() {
       return this.tab === 'all' ? this.items : this.items.filter((o) => o.washState === this.tab)
     },
+    // 开单只能选没停用、还有空位的工位，满位的不出现。
     usableBays() {
-      return this.bays.filter((b) => b.bayState !== '停用')
+      return this.bays.filter((b) => b.bayState !== '停用' && this.freeSeats(b) > 0)
     }
   },
   methods: {
@@ -64,17 +99,24 @@ export default {
       const b = this.bays.find((x) => x.id === id)
       return b ? b.bayCode : '未排'
     },
+    seatCount(b) {
+      return b.seatCount && b.seatCount > 0 ? b.seatCount : 1
+    },
+    freeSeats(b) {
+      return Math.max(0, this.seatCount(b) - (b.occupiedSeats ?? 0))
+    },
     nextOf(o) {
       const i = this.STATES.indexOf(o.washState)
       return i >= 0 && i < this.STATES.length - 1 ? this.STATES[i + 1] : null
     },
     async load() {
-      this.items = await orderApi.list()
-      this.bays = await bayApi.list()
-      this.cards = await cardApi.list()
+      const [os, bs, cs] = await Promise.all([orderApi.list(), bayApi.list(), cardApi.list()])
+      this.items = os
+      this.bays = bs
+      this.cards = cs
     },
     openNew() {
-      this.form = {}
+      this.form = { bayId: this.usableBays[0] ? this.usableBays[0].id : null }
       this.dialog = true
     },
     async submit() {
@@ -91,6 +133,14 @@ export default {
         await this.load()
         this.$message.success('已推进')
       } catch (e) { this.$message.error(e.message) }
+    },
+    openDetail(o) {
+      this.detail = o
+      this.detailDlg = true
+    },
+    goHang(o) {
+      if (o.reworkOpen) return
+      this.$router.push({ path: '/reworks', query: { orderId: o.id } })
     },
     async payWithCard(o) {
       const card = this.cards.find((c) => c.cardState === '正常')
@@ -120,15 +170,21 @@ export default {
   font-size: 12px; color: #647077; cursor: pointer; }
 .tab.on { background: var(--el-color-primary); color: #fff; border-color: var(--el-color-primary); }
 .table { background: #fff; border: 1px solid #e9edef; border-radius: 12px; overflow: hidden; }
-.row { display: grid; grid-template-columns: 96px 100px 76px 92px 70px 100px 78px 120px; gap: 8px;
+.row { display: grid; grid-template-columns: 88px 92px 70px 88px 64px 96px 132px 1fr; gap: 8px;
   align-items: center; padding: 11px 14px; border-bottom: 1px solid #f3f6f7; font-size: 13px; }
 .row.head { background: #f7f9fa; color: #99a1a6; font-size: 12px; }
 .mono { font-family: ui-monospace, Menlo, monospace; color: #99a1a6; font-size: 12px; }
 .r { text-align: right; }
 .dim { color: #99a1a6; font-size: 12px; }
 .st { color: var(--el-color-primary-dark-2); font-size: 12px; }
+.rw { margin-left: 6px; }
 .ghost { background: #fff; border: 1px solid var(--el-color-primary-light-7); color: var(--el-color-primary-dark-2);
-  border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; margin-right: 6px; }
+  border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; margin-left: 6px; }
+.ghost:disabled { color: #bbb; border-color: #e4e7eb; cursor: not-allowed; }
+.rw-btn { border-color: #fdba74; color: #c2610c; }
+.rw-btn:disabled { border-color: #f0dcc2; color: #c8b8a2; background: #fff7ed; }
 .fr { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .fr label { width: 62px; text-align: right; font-size: 13px; color: #647077; }
+.detail .d-row { display: flex; gap: 14px; padding: 8px 4px; border-bottom: 1px dashed #f0f2f4; font-size: 13px; }
+.detail .d-row span { width: 80px; color: #99a1a6; flex-shrink: 0; }
 </style>

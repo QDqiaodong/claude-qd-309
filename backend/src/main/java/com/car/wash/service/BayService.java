@@ -4,7 +4,6 @@ import com.car.wash.dto.BizException;
 import com.car.wash.entity.Bay;
 import com.car.wash.enums.BayState;
 import com.car.wash.repository.BayRepository;
-import com.car.wash.repository.WashOrderRepository;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,15 +12,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class BayService {
 
     private final BayRepository bays;
-    private final WashOrderRepository orders;
+    private final BayOccupancyService occupancy;
 
-    public BayService(BayRepository bays, WashOrderRepository orders) {
+    public BayService(BayRepository bays, BayOccupancyService occupancy) {
         this.bays = bays;
-        this.orders = orders;
+        this.occupancy = occupancy;
     }
 
     public List<Bay> list(BayState state, String keyword) {
         return bays.findAllByOrderByIdAsc().stream()
+                .peek(occupancy::fill)
                 .filter(b -> state == null || state == b.bayState)
                 .filter(b -> keyword == null || keyword.isBlank()
                         || b.bayCode.contains(keyword) || b.bayName.contains(keyword))
@@ -52,12 +52,15 @@ public class BayService {
             if (form.bayState == null) {
                 form.bayState = BayState.空闲;
             }
+            if (form.seatCount != null && form.seatCount <= 0) {
+                throw new BizException("同时容纳得是正数");
+            }
             return bays.save(form);
         }
+        // 停用只看没洗完的洗车单；回炉中的车不拦停用——那张回炉不拆，只能改派到别的空闲工位。
         if (form.bayState == BayState.停用 && existed.bayState != BayState.停用
-                && orders.countByBayId(form.id) > 0
-                && orders.countByBayIdAndWashStateNot(form.id, com.car.wash.enums.WashState.已完成) > 0) {
-            throw new BizException("这个工位上还有没洗完的单子，先处理完再停用");
+                && occupancy.washingCount(form.id) > 0) {
+            throw new BizException("这个工位上还有没洗完的单子，先处理完再停用（回炉中的车请用改派挪走）");
         }
         if (form.seatCount != null) {
             if (form.seatCount <= 0) {

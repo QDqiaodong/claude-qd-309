@@ -18,6 +18,12 @@ export const orderApi = {
   save: (id, b) => http.put(`/orders/${id}`, b),
   pay: (cardId, amount) => http.post(`/orders/pay/${cardId}`, { amount })
 }
+export const reworkApi = {
+  list: (params) => http.get('/reworks', { params }),
+  create: (b) => http.post('/reworks', b),
+  advance: (id) => http.post(`/reworks/${id}/advance`),
+  reassign: (id, bayId) => http.put(`/reworks/${id}/bay`, { bayId })
+}
 export const supplyApi = {
   list: (params) => http.get('/supplies', { params }),
   add: (b) => http.post('/supplies', b),

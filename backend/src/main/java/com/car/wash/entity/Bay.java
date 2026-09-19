@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 
 /** 洗车工位。 */
 @Entity
@@ -31,4 +32,22 @@ public class Bay {
     @Enumerated(EnumType.STRING)
     @Column(name = "bay_state", nullable = false, length = 12)
     public BayState bayState;
+
+    // —— 占用口径由 BayOccupancyService 统一带出，不落库 ——
+
+    /** 没洗完的洗车单占的位数。 */
+    @Transient
+    public Integer washingCars;
+
+    /** 回炉中的车占的位数。 */
+    @Transient
+    public Integer reworkingCars;
+
+    /** 总共占了几位（洗车 + 回炉）。 */
+    @Transient
+    public Integer occupiedSeats;
+
+    /** 还空几位。 */
+    @Transient
+    public Integer freeSeats;
 }
